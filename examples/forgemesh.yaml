@@ -1,0 +1,22 @@
+# ForgeMesh — example configuration.
+# All fields are optional; shown values are the defaults unless commented.
+
+host: 0.0.0.0
+port: 8080
+
+model_dir: ~/.forgemesh/models
+# llama_server_path: llama-server     # absolute path if not on $PATH
+# model: Qwen3-8B-Q4_K_M               # default model to serve
+
+llama_server_host: 127.0.0.1
+llama_server_port: 9337
+
+auth:
+  enabled: true
+  # api_key_file: ~/.forgemesh/api-key
+
+engine:
+  context_size: 4096
+  gpu_layers: -1         # -1 == as many as fit in VRAM
+  # threads: 8           # defaults to llama.cpp's auto-detection
+  extra_args: []         # passed verbatim to llama-server, e.g. ["--flash-attn"]

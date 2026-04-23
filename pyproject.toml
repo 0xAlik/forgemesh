@@ -1,0 +1,69 @@
+[project]
+name = "forgemesh"
+version = "0.0.1"
+description = "Self-hosted, OpenAI-compatible LLM inference for small teams."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0 OR MIT" }
+authors = [
+    { name = "ForgeMesh contributors" },
+]
+keywords = ["llm", "inference", "self-hosted", "openai-compatible", "llama.cpp"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "typer>=0.12",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.4",
+    "httpx>=0.27",
+    "pyyaml>=6.0",
+    "huggingface-hub>=0.25",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[project.scripts]
+forgemesh = "forgemesh.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/0xAlik/forgemesh"
+Issues = "https://github.com/0xAlik/forgemesh/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/forgemesh"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/forgemesh/cli.py" = ["B008"]  # typer idiom: Option/Argument calls in defaults
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

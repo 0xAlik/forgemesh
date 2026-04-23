@@ -1,0 +1,31 @@
+.DS_Store
+Thumbs.db
+.env
+.env.local
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+
+# Editor / OS
+.idea/
+.vscode/
+
+# Internal working files — team framework, strategy notes, research artifacts,
+# weekly reports, task ledger, editor/agent tooling configs. Not part of the
+# public project; kept out of the public repo. Local tree only.
+internal/
+.cursor/
+
+# Model cache and runtime data
+.forgemesh/
+models/*.gguf
