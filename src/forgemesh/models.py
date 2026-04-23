@@ -46,10 +46,17 @@ class ModelCatalog:
           - Absolute or relative path to a .gguf file
           - Bare name (stem) of a model already in the cache
           - Filename with .gguf extension inside the cache
+
+        Symlinks are intentionally NOT followed: the cache keeps friendly
+        names (e.g. Qwen3-0.6B-Q4_K_M.gguf) as symlinks into HF's blob
+        store, and we want to preserve the friendly name for the model
+        identifier we report back to clients. llama-server itself opens
+        the target through the kernel, so the actual blob still gets
+        loaded; only the name we show the user differs.
         """
         p = Path(name_or_path).expanduser()
         if p.is_file():
-            return p.resolve()
+            return p.absolute()
 
         candidates = [
             self.model_dir / name_or_path,
@@ -57,7 +64,7 @@ class ModelCatalog:
         ]
         for c in candidates:
             if c.is_file():
-                return c.resolve()
+                return c.absolute()
 
         known = ", ".join(m.name for m in self.list()) or "(cache empty)"
         raise FileNotFoundError(
@@ -69,15 +76,16 @@ class ModelCatalog:
     def pull(self, repo_id: str, filename: str) -> Path:
         """Download `filename` from HuggingFace repo `repo_id` into the cache.
 
-        Uses hf_hub_download's cache indirectly: the blob is downloaded into
-        HF's own cache, and we symlink/copy the resolved file into our flat
-        model_dir.
+        hf_hub_download may return the blob path under HF's cache (whose
+        filename is a content-hash, not the logical `filename` the user
+        asked for). We always expose the file in our cache under the
+        original requested `filename`, via a symlink when possible.
         """
         log.info("downloading %s/%s", repo_id, filename)
         resolved = hf_hub_download(repo_id=repo_id, filename=filename)
         src = Path(resolved)
-        dst = self.model_dir / src.name
-        if dst.exists():
+        dst = self.model_dir / filename
+        if dst.exists() or dst.is_symlink():
             log.info("already present in cache: %s", dst)
             return dst
         try:
