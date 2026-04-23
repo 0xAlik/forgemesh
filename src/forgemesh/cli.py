@@ -233,7 +233,15 @@ def bench(
         if default_key_file.exists():
             api_key = default_key_file.read_text(encoding="utf-8").strip() or None
 
-    console.print(
+    # In --json mode stdout must be pure JSON so `jq` and friends can parse it.
+    # Route the pretty human-facing header + per-run lines to stderr, and silence
+    # httpx's INFO logs (which also go to stderr by default) so the human output
+    # stays readable.
+    if json_out:
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+
+    human = Console(stderr=True) if json_out else console
+    human.print(
         f"[cyan]Benchmarking[/cyan] {endpoint}  model=[bold]{model}[/bold]  "
         f"runs={runs}  max_tokens={max_tokens}"
     )
@@ -249,7 +257,8 @@ def bench(
 
     data = summary.as_dict()
     if json_out:
-        console.print_json(data=data)
+        # Plain stdout, machine-readable. No rich formatting, no ANSI codes.
+        print(json.dumps(data))
         return
 
     for r in data["per_run"]:
@@ -276,8 +285,6 @@ def bench(
     if data["server_predicted_tps"]["mean"] is not None:
         t.add_row("server-reported tokens/sec (mean)", str(data["server_predicted_tps"]["mean"]))
     console.print(t)
-
-    _ = json  # used when --json is passed via console.print_json
 
 
 if __name__ == "__main__":
