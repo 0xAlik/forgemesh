@@ -14,6 +14,7 @@ from rich.table import Table
 
 from forgemesh import __version__
 from forgemesh.auth import ensure_api_key
+from forgemesh.bench import DEFAULT_PROMPT, run_bench
 from forgemesh.config import Config
 from forgemesh.models import ModelCatalog
 from forgemesh.server import build_state, create_app
@@ -180,6 +181,75 @@ def models_rm(
         console.print(f"[red]error:[/red] {e}")
         raise typer.Exit(code=2) from e
     console.print(f"[green]removed[/green] {path}")
+
+
+@app.command()
+def bench(
+    endpoint: str = typer.Option("http://127.0.0.1:8080", "--endpoint", "-e", help="ForgeMesh/OpenAI-compatible base URL."),
+    model: str = typer.Option(..., "--model", "-m", help="Model name as served by the endpoint."),
+    api_key: str | None = typer.Option(None, "--api-key", help="Bearer token. Reads $FORGEMESH_API_KEY or ~/.forgemesh/api-key if omitted."),
+    runs: int = typer.Option(3, "--runs", "-n", help="Number of request runs after warmup."),
+    max_tokens: int = typer.Option(256, "--max-tokens", help="max_tokens per request."),
+    prompt: str = typer.Option(DEFAULT_PROMPT, "--prompt", help="User prompt text."),
+    no_warmup: bool = typer.Option(False, "--no-warmup", help="Skip the warmup request."),
+    json_out: bool = typer.Option(False, "--json", help="Print the result as JSON instead of a table."),
+) -> None:
+    """Benchmark an OpenAI-compatible endpoint."""
+    import json
+    import os
+
+    if api_key is None:
+        api_key = os.environ.get("FORGEMESH_API_KEY")
+    if api_key is None:
+        default_key_file = Path.home() / ".forgemesh" / "api-key"
+        if default_key_file.exists():
+            api_key = default_key_file.read_text(encoding="utf-8").strip() or None
+
+    console.print(
+        f"[cyan]Benchmarking[/cyan] {endpoint}  model=[bold]{model}[/bold]  "
+        f"runs={runs}  max_tokens={max_tokens}"
+    )
+    summary = run_bench(
+        endpoint=endpoint,
+        model=model,
+        api_key=api_key,
+        runs=runs,
+        max_tokens=max_tokens,
+        prompt=prompt,
+        warmup=not no_warmup,
+    )
+
+    data = summary.as_dict()
+    if json_out:
+        console.print_json(data=data)
+        return
+
+    for r in data["per_run"]:
+        if r["ok"]:
+            console.print(
+                f"  run {r['run']}: "
+                f"wall={r['wall_ms']}ms  "
+                f"completion_tokens={r['completion_tokens']}  "
+                f"wall_tps={r['wall_tps']}  "
+                f"server_tps={r['server_predicted_tps']}"
+            )
+        else:
+            console.print(
+                f"  run {r['run']}: [red]FAIL[/red] status={r['status']} err={r['error']}"
+            )
+
+    t = Table(title="Summary")
+    t.add_column("metric")
+    t.add_column("value", justify="right")
+    t.add_row("ok_runs / runs", f"{data['ok_runs']} / {data['runs']}")
+    t.add_row("wall tokens/sec (mean)", str(data["wall_tps"]["mean"]))
+    t.add_row("wall tokens/sec (median)", str(data["wall_tps"]["median"]))
+    t.add_row("wall tokens/sec (min / max)", f"{data['wall_tps']['min']} / {data['wall_tps']['max']}")
+    if data["server_predicted_tps"]["mean"] is not None:
+        t.add_row("server-reported tokens/sec (mean)", str(data["server_predicted_tps"]["mean"]))
+    console.print(t)
+
+    _ = json  # used when --json is passed via console.print_json
 
 
 if __name__ == "__main__":

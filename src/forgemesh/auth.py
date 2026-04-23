@@ -32,7 +32,7 @@ def make_auth_dependency(api_key: str, *, enabled: bool):
     async def require_auth(request: Request) -> None:
         if not enabled:
             return
-        if request.url.path in {"/healthz", "/"}:
+        if request.url.path in {"/healthz", "/", "/metrics"}:
             return
         header = request.headers.get("authorization", "")
         if not header.lower().startswith("bearer "):

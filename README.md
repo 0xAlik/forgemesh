@@ -73,6 +73,7 @@ Run with `forgemesh serve --config forgemesh.yaml`.
 | Command | What it does |
 |---|---|
 | `forgemesh serve` | Start the API server |
+| `forgemesh bench -m <model>` | Benchmark any OpenAI-compatible endpoint |
 | `forgemesh models list` | List locally cached models |
 | `forgemesh models pull <hf-repo> <filename>` | Download a GGUF from HuggingFace into the cache |
 | `forgemesh models rm <name>` | Remove a cached model |
@@ -85,7 +86,9 @@ Endpoints supported in `v0.0.1`:
 - `GET  /v1/models`
 - `POST /v1/chat/completions` (streaming and non-streaming)
 - `POST /v1/completions`
+- `POST /v1/embeddings`
 - `GET  /healthz`
+- `GET  /metrics` — JSON: request counts, average/p50/p95 latency, total prompt/completion tokens (in-memory, resets on restart)
 
 Anything the upstream `llama-server` accepts, we forward.
 

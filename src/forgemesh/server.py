@@ -20,6 +20,7 @@ from forgemesh import __version__
 from forgemesh.auth import make_auth_dependency
 from forgemesh.config import Config
 from forgemesh.llama_server import LlamaServer
+from forgemesh.metrics import Metrics, MetricsMiddleware
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class _AppState:
     model_name: str
     api_key: str
     http: httpx.AsyncClient
+    metrics: Metrics
 
 
 def create_app(state: _AppState) -> FastAPI:
@@ -51,6 +53,7 @@ def create_app(state: _AppState) -> FastAPI:
         description="Self-hosted, OpenAI-compatible LLM inference.",
         lifespan=lifespan,
     )
+    app.add_middleware(MetricsMiddleware, metrics=state.metrics)
 
     require_auth = make_auth_dependency(state.api_key, enabled=state.config.auth.enabled)
 
@@ -65,6 +68,10 @@ def create_app(state: _AppState) -> FastAPI:
             {"ok": upstream_ok, "model": state.model_name, "version": __version__},
             status_code=200 if upstream_ok else 503,
         )
+
+    @app.get("/metrics")
+    async def metrics():
+        return state.metrics.snapshot()
 
     @app.get("/v1/models", dependencies=[Depends(require_auth)])
     async def list_models():
@@ -140,4 +147,5 @@ def build_state(config: Config, model_path, model_name: str, api_key: str) -> _A
     state.llama = LlamaServer(config=config, model_path=model_path)
     state.model_name = model_name
     state.api_key = api_key
+    state.metrics = Metrics()
     return state
