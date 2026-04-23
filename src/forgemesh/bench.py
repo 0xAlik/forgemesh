@@ -2,7 +2,7 @@
 
 Hits an OpenAI-compatible /v1/chat/completions endpoint (ours or any
 other), runs N sequential requests, and reports wall-clock and
-server-reported tokens/sec. Non-streaming only for v0.0.1; a concurrent
+server-reported tokens/sec. Non-streaming only for v0.0.2; a concurrent
 / streaming mode is a reasonable next thing to add.
 """
 

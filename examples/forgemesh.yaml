@@ -19,4 +19,18 @@ engine:
   context_size: 4096
   gpu_layers: -1         # -1 == as many as fit in VRAM
   # threads: 8           # defaults to llama.cpp's auto-detection
+
+  # --- Multi-GPU, same host ---
+  # Uncomment to split a model across multiple GPUs on the same machine.
+  #
+  # split_mode: layer      # 'layer' (default), 'row', or 'none'
+  #                        #   layer: each GPU owns a contiguous block of layers.
+  #                        #          Good default for PCIe-only setups.
+  #                        #   row:   tensor-parallel; needs fast interconnect
+  #                        #          (NVLink) to be a win over 'layer'.
+  #                        #   none:  single GPU only (use main_gpu).
+  # tensor_split: [3, 2]   # proportional split: 60% on GPU 0, 40% on GPU 1.
+  #                        # Omit for equal split.
+  # main_gpu: 0            # GPU used for small ops.
+
   extra_args: []         # passed verbatim to llama-server, e.g. ["--flash-attn"]

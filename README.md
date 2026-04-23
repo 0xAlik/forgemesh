@@ -4,7 +4,7 @@ Self-hosted, OpenAI-compatible LLM inference for small teams.
 
 Install one binary on each machine you want to serve from, point clients at the endpoint, and get a private `/v1/chat/completions` API backed by your own hardware. No cloud inference API, no per-token billing, no data leaving your network.
 
-> **Status: pre-alpha.** `v0.0.1` runs a single model on a single machine behind an API-key-protected OpenAI-compatible endpoint. Multi-GPU and multi-machine support are next on the roadmap — see below. Expect breaking changes.
+> **Status: pre-alpha.** `v0.0.2` runs a single model on a single machine — on one or multiple GPUs on that machine — behind an API-key-protected OpenAI-compatible endpoint. Multi-machine support is next on the roadmap — see below. Expect breaking changes.
 
 ## Why
 
@@ -68,6 +68,26 @@ engine:
 
 Run with `forgemesh serve --config forgemesh.yaml`.
 
+### Multiple GPUs on one machine
+
+If the box has more than one GPU, ForgeMesh can split a single model across them:
+
+```yaml
+engine:
+  gpu_layers: -1
+  split_mode: layer      # 'layer' (default), 'row', or 'none'
+  tensor_split: [3, 2]   # ~60% of layers on GPU 0, ~40% on GPU 1
+  main_gpu: 0
+```
+
+Or inline:
+
+```bash
+forgemesh serve --model Qwen3-8B-Q4_K_M --tensor-split 3,2 --split-mode layer
+```
+
+`layer` is the right default on PCIe-only systems. `row` is tensor-parallel and only faster when you have a fast interconnect like NVLink.
+
 ## Commands
 
 | Command | What it does |
@@ -81,7 +101,7 @@ Run with `forgemesh serve --config forgemesh.yaml`.
 
 ## OpenAI API compatibility
 
-Endpoints supported in `v0.0.1`:
+Endpoints supported in `v0.0.2`:
 
 - `GET  /v1/models`
 - `POST /v1/chat/completions` (streaming and non-streaming)
@@ -94,9 +114,8 @@ Anything the upstream `llama-server` accepts, we forward.
 
 ## Roadmap
 
-`v0.0.1` is deliberately narrow. Things we intend to add, roughly in order:
+`v0.0.2` is still deliberately narrow. Things we intend to add, roughly in order:
 
-- Same-LAN multi-GPU: serve one model from multiple GPUs on one machine (`llama.cpp` `--tensor-split`).
 - Same-LAN multi-machine: serve one model sharded across GPUs on multiple machines over the LAN, one endpoint. This is the "mesh" in the name.
 - Model-catalog improvements: auto-resume downloads, checksumming, per-model default prompt templates.
 - Web dashboard: server health, token usage per API key, model catalog.

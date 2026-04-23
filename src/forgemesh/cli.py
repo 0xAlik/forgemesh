@@ -61,6 +61,19 @@ def serve(
     host: str | None = typer.Option(None, "--host", help="Bind address."),
     port: int | None = typer.Option(None, "--port", "-p", help="Bind port."),
     no_auth: bool = typer.Option(False, "--no-auth", help="Disable API-key auth (dev only)."),
+    split_mode: str | None = typer.Option(
+        None,
+        "--split-mode",
+        help="Multi-GPU split strategy: 'layer' (default), 'row', or 'none'.",
+    ),
+    tensor_split: str | None = typer.Option(
+        None,
+        "--tensor-split",
+        help="Comma-separated split ratio across GPUs, e.g. '3,2' for 60/40.",
+    ),
+    main_gpu: int | None = typer.Option(
+        None, "--main-gpu", help="GPU index used for small ops."
+    ),
 ) -> None:
     """Start the ForgeMesh API server."""
     cfg = Config.load(config_file).resolve_paths()
@@ -73,6 +86,21 @@ def serve(
         cfg.auth.enabled = False
     if model is not None:
         cfg.model = model
+    if split_mode is not None:
+        if split_mode not in ("layer", "row", "none"):
+            console.print(
+                f"[red]error:[/red] --split-mode must be layer|row|none, got {split_mode!r}"
+            )
+            raise typer.Exit(code=2)
+        cfg.engine.split_mode = split_mode  # type: ignore[assignment]
+    if tensor_split is not None:
+        try:
+            cfg.engine.tensor_split = [float(x) for x in tensor_split.split(",") if x.strip()]
+        except ValueError as e:
+            console.print(f"[red]error:[/red] invalid --tensor-split {tensor_split!r}: {e}")
+            raise typer.Exit(code=2) from e
+    if main_gpu is not None:
+        cfg.engine.main_gpu = main_gpu
 
     if cfg.model is None:
         console.print(

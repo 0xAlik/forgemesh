@@ -25,7 +25,7 @@ from forgemesh.metrics import Metrics, MetricsMiddleware
 log = logging.getLogger(__name__)
 
 
-# Proxy config assembled in `create_app`; only one model served in v0.0.1.
+# Proxy config assembled in `create_app`; only one model served in v0.0.2.
 class _AppState:
     config: Config
     llama: LlamaServer

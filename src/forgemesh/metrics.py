@@ -1,6 +1,6 @@
 """In-memory request metrics.
 
-Deliberately minimal for v0.0.1:
+Deliberately minimal for v0.0.2:
   - counts per route and HTTP status bucket
   - total observed latency (ms) per route, for computing simple averages
   - total prompt/completion tokens observed on /v1/chat/completions and

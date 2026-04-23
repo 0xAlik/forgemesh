@@ -11,7 +11,7 @@ set -euo pipefail
 
 FORGEMESH_HOME="${FORGEMESH_HOME:-$HOME/.forgemesh}"
 INSTALL_BIN="${INSTALL_BIN:-$HOME/.local/bin}"
-FORGEMESH_VERSION="${FORGEMESH_VERSION:-0.0.1}"
+FORGEMESH_VERSION="${FORGEMESH_VERSION:-0.0.2}"
 
 have() { command -v "$1" >/dev/null 2>&1; }
 

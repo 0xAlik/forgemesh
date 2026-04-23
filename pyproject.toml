@@ -1,6 +1,6 @@
 [project]
 name = "forgemesh"
-version = "0.0.1"
+version = "0.0.2"
 description = "Self-hosted, OpenAI-compatible LLM inference for small teams."
 readme = "README.md"
 requires-python = ">=3.11"

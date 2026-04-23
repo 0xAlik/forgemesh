@@ -27,6 +27,17 @@ class LlamaServerError(RuntimeError):
     pass
 
 
+def _fmt_num(x: float) -> str:
+    """Render a number without a trailing .0 for integer-valued floats.
+
+    Keeps `--tensor-split 3,2` clean instead of `3.0,2.0`, which llama-server
+    accepts but looks noisy in logs.
+    """
+    if float(x).is_integer():
+        return str(int(x))
+    return repr(float(x))
+
+
 @dataclass
 class LlamaServer:
     config: Config
@@ -39,17 +50,25 @@ class LlamaServer:
 
     def _build_argv(self) -> list[str]:
         cfg = self.config
+        eng = cfg.engine
         argv = [
             cfg.llama_server_path,
             "--model", str(self.model_path),
             "--host", cfg.llama_server_host,
             "--port", str(cfg.llama_server_port),
-            "--ctx-size", str(cfg.engine.context_size),
-            "--n-gpu-layers", str(cfg.engine.gpu_layers),
+            "--ctx-size", str(eng.context_size),
+            "--n-gpu-layers", str(eng.gpu_layers),
         ]
-        if cfg.engine.threads is not None:
-            argv.extend(["--threads", str(cfg.engine.threads)])
-        argv.extend(cfg.engine.extra_args)
+        if eng.threads is not None:
+            argv.extend(["--threads", str(eng.threads)])
+        if eng.split_mode is not None:
+            argv.extend(["--split-mode", eng.split_mode])
+        if eng.tensor_split is not None:
+            # llama-server expects a comma-separated list, e.g. "3,2".
+            argv.extend(["--tensor-split", ",".join(_fmt_num(x) for x in eng.tensor_split)])
+        if eng.main_gpu is not None:
+            argv.extend(["--main-gpu", str(eng.main_gpu)])
+        argv.extend(eng.extra_args)
         return argv
 
     def start(self, *, ready_timeout_s: float = 120.0) -> None:
