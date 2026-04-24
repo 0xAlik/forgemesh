@@ -18,11 +18,13 @@ ForgeMesh is the thin layer in between: `curl | bash`, point it at a GGUF model,
 
 ## Install
 
-Requires Python 3.11+ and a working [`llama.cpp`](https://github.com/ggerganov/llama.cpp) build (`llama-server` on your `PATH`). GPU acceleration is whatever `llama.cpp` was compiled with — CUDA, Metal, CPU, etc.
+Requires Python 3.11+, `git`, and a working [`llama.cpp`](https://github.com/ggerganov/llama.cpp) build (`llama-server` on your `PATH`). GPU acceleration is whatever `llama.cpp` was compiled with — CUDA, Metal, CPU, etc.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/0xAlik/forgemesh/main/install.sh | bash
 ```
+
+The installer creates an isolated venv at `~/.forgemesh/venv`, installs ForgeMesh from the tagged GitHub release (ForgeMesh is pre-alpha and deliberately not on PyPI yet), and drops a `forgemesh` shim into `~/.local/bin`. Pin a different version with `FORGEMESH_VERSION=0.0.3`; track a branch for hacking with `FORGEMESH_REF=main`.
 
 Or from source:
 
