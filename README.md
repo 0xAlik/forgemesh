@@ -18,13 +18,20 @@ ForgeMesh is the thin layer in between: `curl | bash`, point it at a GGUF model,
 
 ## Install
 
-Requires Python 3.11+, `git`, and a working [`llama.cpp`](https://github.com/ggerganov/llama.cpp) build (`llama-server` on your `PATH`). GPU acceleration is whatever `llama.cpp` was compiled with — CUDA, Metal, CPU, etc.
+Requires Python 3.11+, `git`, `curl`, and `tar`. The installer auto-installs a prebuilt [`llama.cpp`](https://github.com/ggml-org/llama.cpp) binary if one isn't already on your `PATH` — Vulkan on Linux x86_64, Metal on Apple Silicon, CPU-only on Linux ARM64.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/0xAlik/forgemesh/main/install.sh | bash
 ```
 
-The installer creates an isolated venv at `~/.forgemesh/venv`, installs ForgeMesh from the tagged GitHub release (ForgeMesh is pre-alpha and deliberately not on PyPI yet), and drops a `forgemesh` shim into `~/.local/bin`. Pin a different version with `FORGEMESH_VERSION=0.0.3`; track a branch for hacking with `FORGEMESH_REF=main`.
+The installer creates an isolated venv at `~/.forgemesh/venv`, installs ForgeMesh from the tagged GitHub release (ForgeMesh is pre-alpha and deliberately not on PyPI yet), and drops a `forgemesh` shim into `~/.local/bin`. If `llama-server` isn't already on your `PATH`, it also downloads the matching prebuilt `llama.cpp` release into `~/.forgemesh/llama.cpp` and shims `llama-server` next to `forgemesh`. Total install time on a clean box is typically well under a minute (model download not included).
+
+Environment overrides:
+
+- `FORGEMESH_VERSION=0.0.3` — pin a different ForgeMesh release tag.
+- `FORGEMESH_REF=main` — track a branch for hacking (unpinned; not recommended for pilot use).
+- `LLAMA_CPP_VERSION=bXXXX` — pin a specific upstream `llama.cpp` release; default is `latest` resolved via the GitHub API with a fallback to a known-good tag if the API is unreachable.
+- `FORGEMESH_SKIP_LLAMA=1` — skip the `llama.cpp` auto-install (bring your own binary). Useful when you want a hand-tuned CUDA build for sustained NVIDIA workloads — build `llama-server` from source as documented upstream, drop it on `PATH`, and the installer leaves it alone.
 
 Or from source:
 
