@@ -77,7 +77,21 @@ FORGEMESH_TEST_MODEL_FILE=Qwen3-8B-Q4_K_M.gguf \
   bash <(curl -fsSL https://raw.githubusercontent.com/0xAlik/forgemesh/main/scripts/smoke-test.sh)
 ```
 
-If you're test-driving this for me, please send back the contents of `~/.forgemesh/smoke-test/summary.json` (and `summary.md` if you want it pretty).
+If you're test-driving this for me, please send back the contents of `~/.forgemesh/smoke-test/summary.json` (and `summary.md` if you want it pretty). The JSON includes the detected backend (CUDA / Vulkan / Metal / CPU), the per-layer GPU offload lines from the upstream `llama-server`, end-to-end streaming TTFT, the bench numbers, and the in-process `/metrics` snapshot — everything I need to triage from a different timezone.
+
+The smoke test is opinionated about correctness: if your box has `nvidia-smi` but the prebuilt Vulkan `llama-server` ends up on CPU (Vulkan ICD not installed, etc.), the script exits non-zero with a clear repro instead of silently shipping a misleading CPU bench. If you hit that, the README's source-build escape hatch (`FORGEMESH_SKIP_LLAMA=1` + a `-DGGML_CUDA=ON` build of `llama.cpp`) is the supported way out.
+
+### Drop-in OpenAI client examples
+
+If your existing app already talks to OpenAI, point it at ForgeMesh by changing `base_url` and `api_key` — that's it. The repo ships two minimal demos:
+
+```bash
+pip install openai
+python examples/openai_client.py   # non-streaming chat
+python examples/streaming.py       # SSE streaming with TTFT
+```
+
+Both honor `FORGEMESH_BASE_URL` (default `http://127.0.0.1:8080`) and `FORGEMESH_MODEL` (default `Qwen3-0.6B-Q4_K_M`).
 
 ## Configuration
 
