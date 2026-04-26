@@ -4,7 +4,7 @@ Self-hosted, OpenAI-compatible LLM inference for small teams.
 
 Install one binary on each machine you want to serve from, point clients at the endpoint, and get a private `/v1/chat/completions` API backed by your own hardware. No cloud inference API, no per-token billing, no data leaving your network.
 
-> **Status: pre-alpha.** `v0.0.2` runs a single model on a single machine — on one or multiple GPUs on that machine — behind an API-key-protected OpenAI-compatible endpoint. Multi-machine support is next on the roadmap — see below. Expect breaking changes.
+> **Status: pre-alpha.** `v0.0.3` runs a single model on a single machine — on one or multiple GPUs on that machine — behind an API-key-protected OpenAI-compatible endpoint. Multi-machine support is next on the roadmap — see below. Expect breaking changes.
 
 ## Why
 
@@ -61,6 +61,24 @@ curl http://127.0.0.1:8080/v1/chat/completions \
 
 `FORGEMESH_API_KEY` is generated on first run and printed once; it's stored at `~/.forgemesh/api-key`.
 
+## Got a GPU? Smoke-test the whole thing in one shot
+
+If you just want to verify ForgeMesh works on your hardware end-to-end (install → pull a small model → serve → chat → tiny benchmark), run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/0xAlik/forgemesh/main/scripts/smoke-test.sh | bash
+```
+
+Defaults are sized to be friendly to any machine: `unsloth/Qwen3-0.6B-GGUF` (378 MiB) so the download is seconds, not minutes. The script prints per-phase timings (install, pull, start, first chat, bench) and writes both a JSON and a Markdown summary under `~/.forgemesh/smoke-test/`. To exercise an 8B model on a real GPU instead:
+
+```bash
+FORGEMESH_TEST_MODEL_REPO=unsloth/Qwen3-8B-GGUF \
+FORGEMESH_TEST_MODEL_FILE=Qwen3-8B-Q4_K_M.gguf \
+  bash <(curl -fsSL https://raw.githubusercontent.com/0xAlik/forgemesh/main/scripts/smoke-test.sh)
+```
+
+If you're test-driving this for me, please send back the contents of `~/.forgemesh/smoke-test/summary.json` (and `summary.md` if you want it pretty).
+
 ## Configuration
 
 Minimal `forgemesh.yaml`:
@@ -112,7 +130,7 @@ forgemesh serve --model Qwen3-8B-Q4_K_M --tensor-split 3,2 --split-mode layer
 
 ## OpenAI API compatibility
 
-Endpoints supported in `v0.0.2`:
+Endpoints supported in `v0.0.3`:
 
 - `GET  /v1/models`
 - `POST /v1/chat/completions` (streaming and non-streaming)
@@ -125,7 +143,7 @@ Anything the upstream `llama-server` accepts, we forward.
 
 ## Roadmap
 
-`v0.0.2` is still deliberately narrow. Things we intend to add, roughly in order:
+`v0.0.3` is still deliberately narrow. Things we intend to add, roughly in order:
 
 - Same-LAN multi-machine: serve one model sharded across GPUs on multiple machines over the LAN, one endpoint. This is the "mesh" in the name.
 - Model-catalog improvements: auto-resume downloads, checksumming, per-model default prompt templates.

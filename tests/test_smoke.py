@@ -20,7 +20,7 @@ from forgemesh.models import ModelCatalog
 
 
 def test_version_string():
-    assert __version__ == "0.0.2"
+    assert __version__ == "0.0.3"
 
 
 def test_config_defaults():
