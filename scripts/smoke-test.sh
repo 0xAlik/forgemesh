@@ -182,7 +182,7 @@ start_phase smoke_chat
 model_stem="${TEST_MODEL_FILE%.gguf}"
 chat_url="http://${TEST_HOST}:${TEST_PORT}/v1/chat/completions"
 chat_body=$(cat <<JSON
-{"model":"${model_stem}","messages":[{"role":"user","content":"Reply with exactly the word: OK."}],"max_tokens":8,"temperature":0}
+{"model":"${model_stem}","messages":[{"role":"user","content":"Reply with exactly the word: OK."}],"max_tokens":16,"temperature":0,"chat_template_kwargs":{"enable_thinking":false}}
 JSON
 )
 chat_response=$(curl -fsS -X POST "$chat_url" \
@@ -240,7 +240,7 @@ fi
 # undermine the friend-test entirely.
 start_phase stream_chat
 stream_body=$(cat <<JSON
-{"model":"${model_stem}","messages":[{"role":"user","content":"Count from one to ten in English. One per line."}],"max_tokens":48,"temperature":0,"stream":true}
+{"model":"${model_stem}","messages":[{"role":"user","content":"Count from one to ten in English. One per line."}],"max_tokens":64,"temperature":0,"stream":true,"chat_template_kwargs":{"enable_thinking":false}}
 JSON
 )
 STREAM_LOG="$RESULTS_DIR/stream.log"
@@ -270,12 +270,18 @@ with urllib.request.urlopen(req, timeout=120) as resp, open(out_path, "w") as ou
         except Exception:
             continue
         for ch in d.get("choices", []):
-            delta = (ch.get("delta") or {}).get("content")
-            if delta:
+            delta_obj = ch.get("delta") or {}
+            # Count both content and reasoning_content as "chunk arrived":
+            # Qwen3-style thinking models route the chain-of-thought to
+            # reasoning_content; the smoke test cares about whether the
+            # stream is actually flowing, not which channel the bytes
+            # ended up on.
+            piece = delta_obj.get("content") or delta_obj.get("reasoning_content")
+            if piece:
                 if ttft_ms is None:
                     ttft_ms = int((time.perf_counter() - start) * 1000)
                 chunks += 1
-                text_chars += len(delta)
+                text_chars += len(piece)
 end = time.perf_counter()
 total_ms = int((end - start) * 1000)
 print(json.dumps({"ok": chunks > 0, "ttft_ms": ttft_ms, "total_ms": total_ms,
