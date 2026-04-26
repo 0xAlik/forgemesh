@@ -43,10 +43,23 @@ class LlamaServer:
     config: Config
     model_path: Path
     _proc: subprocess.Popen | None = None
+    _log_fh = None
 
     @property
     def base_url(self) -> str:
         return f"http://{self.config.llama_server_host}:{self.config.llama_server_port}"
+
+    @property
+    def log_path(self) -> Path:
+        """Where llama-server's stdout/stderr is appended.
+
+        Lives next to the API-key file under FORGEMESH_HOME so the
+        location is predictable for users grepping "why is generation
+        running on CPU?". Backend identity (CUDA / Vulkan / Metal /
+        CPU), per-layer offload, and llama.cpp's startup banner all
+        end up here.
+        """
+        return self.config.auth.api_key_file.parent / "llama-server.log"
 
     def _build_argv(self) -> list[str]:
         cfg = self.config
@@ -79,14 +92,24 @@ class LlamaServer:
 
         argv = self._build_argv()
         log.info("launching llama-server: %s", " ".join(argv))
+
+        log_path = self.log_path
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        # Open in append-binary so llama-server's chunked output never blocks
+        # on a PIPE the parent isn't draining. line buffering lets `tail -f`
+        # behave nicely.
+        self._log_fh = log_path.open("ab", buffering=0)
+        log.info("llama-server stdout/stderr -> %s", log_path)
+
         try:
             self._proc = subprocess.Popen(
                 argv,
-                stdout=subprocess.PIPE,
+                stdout=self._log_fh,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
         except FileNotFoundError as e:
+            self._close_log()
             raise LlamaServerError(
                 f"llama-server not found at '{self.config.llama_server_path}'. "
                 "Install llama.cpp and put `llama-server` on your PATH, or set "
@@ -102,10 +125,10 @@ class LlamaServer:
         while time.time() < deadline:
             rc = self._proc.poll()
             if rc is not None:
-                out = self._drain_output_nonblocking()
+                tail = self._tail_log(40)
                 raise LlamaServerError(
                     f"llama-server exited with rc={rc} before becoming ready. "
-                    f"last output:\n{out}"
+                    f"see {self.log_path} (last lines):\n{tail}"
                 )
             try:
                 r = httpx.get(health, timeout=1.0)
@@ -115,16 +138,27 @@ class LlamaServer:
             except httpx.RequestError:
                 pass
             time.sleep(0.5)
-        raise LlamaServerError(f"llama-server did not become ready within {timeout_s}s")
+        raise LlamaServerError(
+            f"llama-server did not become ready within {timeout_s}s. "
+            f"see {self.log_path} (last lines):\n{self._tail_log(40)}"
+        )
 
-    def _drain_output_nonblocking(self) -> str:
-        if self._proc is None or self._proc.stdout is None:
-            return ""
+    def _tail_log(self, n: int) -> str:
         try:
-            data = self._proc.stdout.read()
-        except Exception:
+            with self.log_path.open("rb") as f:
+                data = f.read()
+        except OSError:
             return ""
-        return data.decode("utf-8", errors="replace") if isinstance(data, bytes) else str(data)
+        text = data.decode("utf-8", errors="replace")
+        lines = text.splitlines()
+        return "\n".join(lines[-n:])
+
+    def _close_log(self) -> None:
+        fh = self._log_fh
+        self._log_fh = None
+        if fh is not None:
+            with contextlib.suppress(Exception):
+                fh.close()
 
     def stop(self, *, timeout_s: float = 10.0) -> None:
         if self._proc is None:
@@ -151,6 +185,7 @@ class LlamaServer:
             self._proc.wait(timeout=5.0)
         finally:
             self._proc = None
+            self._close_log()
 
     def is_running(self) -> bool:
         return self._proc is not None and self._proc.poll() is None

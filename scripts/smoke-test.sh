@@ -54,6 +54,10 @@ mkdir -p "$RESULTS_DIR"
 LOG="$RESULTS_DIR/serve.log"
 SUMMARY_JSON="$RESULTS_DIR/summary.json"
 SUMMARY_MD="$RESULTS_DIR/summary.md"
+# llama-server.log is forgemesh's canonical location for the upstream
+# llama.cpp banner (backend, layer offload, etc.). We grep this to
+# detect CPU-only fallback on a machine that has a GPU.
+LLAMA_SERVER_LOG="$FORGEMESH_HOME/llama-server.log"
 
 export PATH="$INSTALL_BIN:$PATH"
 
@@ -187,7 +191,104 @@ chat_response=$(curl -fsS -X POST "$chat_url" \
 echo "     response: $chat_response"
 end_phase
 
-# 7. Tiny bench --------------------------------------------------------------
+# 6. GPU-fallback assertion --------------------------------------------------
+# Read the llama-server log forgemesh writes at FORGEMESH_HOME/llama-server.log.
+# llama.cpp prints its backend identity (CUDA/Vulkan/Metal/CPU) and per-layer
+# offload counts on startup. If the host has nvidia-smi but the log doesn't
+# mention CUDA or Vulkan, we're silently running on CPU — fail loudly.
+echo
+echo "==> [check] GPU offload"
+GPU_BACKEND="cpu"
+GPU_OFFLOAD_LINE=""
+if [ -f "$LLAMA_SERVER_LOG" ]; then
+  if grep -qiE 'CUDA|cuBLAS' "$LLAMA_SERVER_LOG"; then
+    GPU_BACKEND="cuda"
+  elif grep -qiE 'Vulkan' "$LLAMA_SERVER_LOG"; then
+    GPU_BACKEND="vulkan"
+  elif grep -qiE 'Metal|MPS' "$LLAMA_SERVER_LOG"; then
+    GPU_BACKEND="metal"
+  elif grep -qiE 'ROCm|HIP' "$LLAMA_SERVER_LOG"; then
+    GPU_BACKEND="rocm"
+  fi
+  GPU_OFFLOAD_LINE="$(grep -iE 'offloaded.*layers? to (GPU|device)|load_tensors:.*GPU' "$LLAMA_SERVER_LOG" | head -1 || true)"
+fi
+echo "     backend: $GPU_BACKEND"
+if [ -n "$GPU_OFFLOAD_LINE" ]; then
+  echo "     offload: $GPU_OFFLOAD_LINE"
+fi
+if command -v nvidia-smi >/dev/null 2>&1; then
+  if [ "$GPU_BACKEND" = "cpu" ] || [ "$GPU_BACKEND" = "metal" ]; then
+    echo "     nvidia-smi present but llama-server reports backend=$GPU_BACKEND"
+    echo "     last 30 lines of $LLAMA_SERVER_LOG:"
+    tail -n 30 "$LLAMA_SERVER_LOG" 2>/dev/null || echo "     (log not found)"
+    echo
+    echo "FAIL: this box has an NVIDIA GPU but llama-server isn't using it."
+    echo "      The prebuilt llama.cpp Vulkan binary may not be picking up"
+    echo "      the NVIDIA Vulkan ICD. Workarounds:"
+    echo "       - install the NVIDIA Vulkan driver / ICD"
+    echo "       - or build llama.cpp from source with -DGGML_CUDA=ON and put"
+    echo "         the resulting llama-server on \$PATH before re-running."
+    exit 2
+  fi
+fi
+
+# 7. Streaming probe ---------------------------------------------------------
+# Confirm SSE streaming actually flows through ForgeMesh end-to-end. We use
+# `--no-buffer` so curl flushes chunks and read the SSE stream line by line,
+# scoring TTFT (time-to-first-token) and chunk count. Streaming is the path
+# any real chat app will use, so silently shipping a broken stream would
+# undermine the friend-test entirely.
+start_phase stream_chat
+stream_body=$(cat <<JSON
+{"model":"${model_stem}","messages":[{"role":"user","content":"Count from one to ten in English. One per line."}],"max_tokens":48,"temperature":0,"stream":true}
+JSON
+)
+STREAM_LOG="$RESULTS_DIR/stream.log"
+STREAM_RESULT_FILE="$RESULTS_DIR/stream-result.json"
+python3 - "$chat_url" "$stream_body" "$STREAM_LOG" > "$STREAM_RESULT_FILE" <<'PY'
+import json, sys, time
+import urllib.request
+
+url, body, out_path = sys.argv[1:4]
+req = urllib.request.Request(url, data=body.encode("utf-8"),
+    headers={"Content-Type": "application/json", "Accept": "text/event-stream"})
+start = time.perf_counter()
+ttft_ms = None
+chunks = 0
+text_chars = 0
+with urllib.request.urlopen(req, timeout=120) as resp, open(out_path, "w") as out:
+    for raw in resp:
+        line = raw.decode("utf-8", errors="replace").rstrip("\n")
+        out.write(line + "\n")
+        if not line.startswith("data:"):
+            continue
+        payload = line[5:].strip()
+        if payload == "[DONE]":
+            break
+        try:
+            d = json.loads(payload)
+        except Exception:
+            continue
+        for ch in d.get("choices", []):
+            delta = (ch.get("delta") or {}).get("content")
+            if delta:
+                if ttft_ms is None:
+                    ttft_ms = int((time.perf_counter() - start) * 1000)
+                chunks += 1
+                text_chars += len(delta)
+end = time.perf_counter()
+total_ms = int((end - start) * 1000)
+print(json.dumps({"ok": chunks > 0, "ttft_ms": ttft_ms, "total_ms": total_ms,
+                  "chunks": chunks, "text_chars": text_chars}))
+PY
+echo "     stream: $(cat "$STREAM_RESULT_FILE")"
+if ! python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get('ok') else 1)" "$STREAM_RESULT_FILE"; then
+  echo "FAIL: streaming response yielded zero content chunks"
+  exit 1
+fi
+end_phase
+
+# 7b. Tiny bench --------------------------------------------------------------
 start_phase bench
 bench_json="$RESULTS_DIR/bench.json"
 if ! forgemesh bench \
@@ -206,6 +307,16 @@ fi
 echo "     bench JSON written to: $bench_json"
 end_phase
 
+# 8. Snapshot /metrics (server-internal, not the bench harness) -------------
+metrics_url="http://${TEST_HOST}:${TEST_PORT}/metrics"
+METRICS_FILE="$RESULTS_DIR/metrics.json"
+if curl -fsS "$metrics_url" > "$METRICS_FILE" 2>/dev/null; then
+  echo "     metrics snapshot: $METRICS_FILE"
+else
+  echo "     warn: /metrics did not respond"
+  echo '{}' > "$METRICS_FILE"
+fi
+
 T_TOTAL_END=$(ts_ms)
 TOTAL_MS=$(( T_TOTAL_END - T_TOTAL_START ))
 
@@ -215,17 +326,20 @@ phase_ms() { eval "echo \${$(phase_ms_var "$1"):-0}"; }
 echo
 echo "==> PASS"
 printf '     total wall: %.2fs\n' "$(echo "$TOTAL_MS/1000" | bc -l)"
-for phase in install pull_model start_serve smoke_chat bench; do
+for phase in install pull_model start_serve smoke_chat stream_chat bench; do
   ms="$(phase_ms "$phase")"
   printf '     %-12s %.2fs\n' "$phase" "$(echo "$ms/1000" | bc -l)"
 done
 
 # JSON summary the user can email back ---------------------------------------
 python3 - "$SUMMARY_JSON" "$TOTAL_MS" "$(phase_ms install)" "$(phase_ms pull_model)" \
-  "$(phase_ms start_serve)" "$(phase_ms smoke_chat)" "$(phase_ms bench)" \
-  "$TEST_MODEL_REPO" "$TEST_MODEL_FILE" "$bench_json" <<'PY'
-import json, os, platform, subprocess, sys
-out, total, t_install, t_pull, t_start, t_chat, t_bench, repo, fname, bench_json = sys.argv[1:11]
+  "$(phase_ms start_serve)" "$(phase_ms smoke_chat)" "$(phase_ms stream_chat)" \
+  "$(phase_ms bench)" \
+  "$TEST_MODEL_REPO" "$TEST_MODEL_FILE" "$bench_json" \
+  "$STREAM_RESULT_FILE" "$METRICS_FILE" "$GPU_BACKEND" "$LLAMA_SERVER_LOG" <<'PY'
+import json, platform, subprocess, sys
+(out, total, t_install, t_pull, t_start, t_chat, t_stream, t_bench, repo, fname,
+ bench_json, stream_json, metrics_json, gpu_backend, llama_log) = sys.argv[1:16]
 gpu = "unknown"
 try:
     r = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total,driver_version",
@@ -236,28 +350,56 @@ except Exception:
     pass
 if gpu == "unknown" and platform.machine() == "arm64" and platform.system() == "Darwin":
     gpu = "Apple Silicon (Metal)"
+
+def _read_json(path, default=None):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+bench_data = _read_json(bench_json)
+stream_data = _read_json(stream_json)
+metrics_data = _read_json(metrics_json, default={})
+
+# Pull just the offload line(s) from the llama-server log so the friend's
+# summary.json is self-contained for triage.
+offload_lines = []
 try:
-    with open(bench_json) as f:
-        bench_data = json.load(f)
+    with open(llama_log) as f:
+        for line in f:
+            low = line.lower()
+            if ("offloaded" in low and "gpu" in low) or "load_tensors" in low:
+                offload_lines.append(line.rstrip())
+                if len(offload_lines) >= 5:
+                    break
 except Exception:
-    bench_data = None
+    pass
+
 data = {
-    "schema": 1,
+    "schema": 2,
     "host": {
         "uname": " ".join(platform.uname()),
         "python": platform.python_version(),
         "gpu": gpu,
     },
     "model": {"repo": repo, "file": fname},
+    "backend": {
+        "name": gpu_backend,
+        "offload_lines": offload_lines,
+    },
     "phases_ms": {
         "install": int(t_install),
         "pull_model": int(t_pull),
         "start_serve": int(t_start),
         "smoke_chat": int(t_chat),
+        "stream_chat": int(t_stream),
         "bench": int(t_bench),
         "total": int(total),
     },
+    "stream": stream_data,
     "bench": bench_data,
+    "metrics": metrics_data,
 }
 with open(out, "w") as f:
     json.dump(data, f, indent=2)
@@ -273,17 +415,20 @@ PY
   if command -v nvidia-smi >/dev/null 2>&1; then
     echo "- gpu: $(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)"
   fi
+  echo "- backend: \`$GPU_BACKEND\`"
   echo "- model: ${TEST_MODEL_REPO}/${TEST_MODEL_FILE}"
   echo
   echo "| phase | wall (s) |"
   echo "|---|---:|"
-  for phase in install pull_model start_serve smoke_chat bench; do
+  for phase in install pull_model start_serve smoke_chat stream_chat bench; do
     ms="$(phase_ms "$phase")"
     printf '| %s | %.2f |\n' "$phase" "$(echo "$ms/1000" | bc -l)"
   done
   printf '| **total** | **%.2f** |\n' "$(echo "$TOTAL_MS/1000" | bc -l)"
   echo
+  echo "Streaming: \`$STREAM_RESULT_FILE\`"
   echo "Raw bench: \`$bench_json\`"
+  echo "Metrics:   \`$METRICS_FILE\`"
 } > "$SUMMARY_MD"
 echo "     summary MD:   $SUMMARY_MD"
 echo
