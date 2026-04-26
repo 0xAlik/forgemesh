@@ -186,12 +186,27 @@ def models_list(
 def models_pull(
     repo_id: str = typer.Argument(..., help="HuggingFace repo id, e.g. unsloth/Qwen3-8B-GGUF"),
     filename: str = typer.Argument(..., help="File inside the repo, e.g. Qwen3-8B-Q4_K_M.gguf"),
+    revision: str = typer.Option(
+        "main",
+        "--revision",
+        help="HuggingFace revision/branch/tag to fetch from (default: main).",
+    ),
+    direct: bool = typer.Option(
+        True,
+        "--direct/--no-direct",
+        help=(
+            "Stream directly from huggingface.co/.../resolve/... (default). "
+            "Bypasses huggingface_hub's Xet transport, which has stalled at "
+            "~12 KB/s in some regions. Use --no-direct to force the Hub "
+            "client (e.g. for private/gated repos that need auth)."
+        ),
+    ),
     config_file: Path | None = typer.Option(None, "--config", "-c"),
 ) -> None:
     """Download a GGUF from HuggingFace into the local cache."""
     cfg = Config.load(config_file).resolve_paths()
     catalog = ModelCatalog(cfg.model_dir)
-    dst = catalog.pull(repo_id, filename)
+    dst = catalog.pull(repo_id, filename, revision=revision, direct=direct)
     console.print(f"[green]ok[/green] {dst}")
 
 

@@ -48,6 +48,8 @@ forgemesh models pull unsloth/Qwen3-8B-GGUF Qwen3-8B-Q4_K_M.gguf
 forgemesh serve --model Qwen3-8B-Q4_K_M.gguf
 ```
 
+`models pull` streams the file directly from `huggingface.co/<repo>/resolve/main/<filename>` (bypasses the `huggingface_hub` Xet transport, which has stalled at ~12 KB/s in some regions). Use `--no-direct` to force the Hub client (e.g. for private/gated repos that need auth), or `--revision` to fetch from a non-default branch/tag.
+
 In another terminal:
 
 ```bash
