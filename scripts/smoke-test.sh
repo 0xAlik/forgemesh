@@ -32,8 +32,15 @@
 
 set -euo pipefail
 
-FORGEMESH_HOME="${FORGEMESH_HOME:-$HOME/.forgemesh}"
-INSTALL_BIN="${INSTALL_BIN:-$HOME/.local/bin}"
+# Note: this script runs against the canonical install footprint
+# (~/.forgemesh + ~/.local/bin). install.sh accepts FORGEMESH_HOME and
+# INSTALL_BIN overrides for isolation, but the runtime `forgemesh`
+# binary always reads/writes ~/.forgemesh/{models,api-key} from
+# Config defaults, so trying to relocate one without the other just
+# causes mismatches. Keep them locked to the defaults here; if you
+# need true isolation use a container or a fresh user account.
+FORGEMESH_HOME="$HOME/.forgemesh"
+INSTALL_BIN="$HOME/.local/bin"
 FORGEMESH_REPO_RAW="${FORGEMESH_REPO_RAW:-https://raw.githubusercontent.com/0xAlik/forgemesh/main}"
 
 TEST_MODEL_REPO="${FORGEMESH_TEST_MODEL_REPO:-unsloth/Qwen3-0.6B-GGUF}"
@@ -133,6 +140,7 @@ forgemesh serve \
   --model "$TEST_MODEL_FILE" \
   --host "$TEST_HOST" \
   --port "$TEST_PORT" \
+  --no-auth \
   > "$LOG" 2>&1 &
 SERVE_PID=$!
 
@@ -162,15 +170,10 @@ while true; do
 done
 end_phase
 
-# 5. Read API key (first start-up writes it once) ---------------------------
-API_KEY_FILE="${FORGEMESH_HOME}/api-key"
-if [ -f "$API_KEY_FILE" ]; then
-  API_KEY="$(cat "$API_KEY_FILE")"
-else
-  API_KEY=""
-fi
-
-# 6. Smoke chat completion ---------------------------------------------------
+# 5. Smoke chat completion ---------------------------------------------------
+# Server is in --no-auth mode for the duration of the smoke test, so we
+# don't have to round-trip an API-key file. Real deployments should run
+# WITHOUT --no-auth.
 start_phase smoke_chat
 model_stem="${TEST_MODEL_FILE%.gguf}"
 chat_url="http://${TEST_HOST}:${TEST_PORT}/v1/chat/completions"
@@ -179,7 +182,6 @@ chat_body=$(cat <<JSON
 JSON
 )
 chat_response=$(curl -fsS -X POST "$chat_url" \
-  -H "Authorization: Bearer ${API_KEY}" \
   -H "Content-Type: application/json" \
   --data "$chat_body")
 echo "     response: $chat_response"
@@ -190,7 +192,7 @@ start_phase bench
 bench_json="$RESULTS_DIR/bench.json"
 if ! forgemesh bench \
       --endpoint "http://${TEST_HOST}:${TEST_PORT}" \
-      --api-key "${API_KEY}" \
+      --api-key "smoke-no-auth" \
       --model "${model_stem}" \
       --max-tokens 64 \
       --runs 2 \
